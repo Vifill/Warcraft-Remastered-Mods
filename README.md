@@ -53,6 +53,32 @@ The mods are a small stand-in `VERSION.dll` placed next to `Warcraft.exe`. It fo
 
 Written for game build **1.0.0.2762**.
 
+## Verify your download
+
+Releases are built by [GitHub Actions](.github/workflows/release.yml) from the tagged source, not on anyone's computer.
+
+**1. Check the checksum.** Each release has `SHA256SUMS.txt`. In the folder with your downloads:
+
+```sh
+shasum -a 256 -c SHA256SUMS.txt --ignore-missing
+```
+
+On Windows (PowerShell): `Get-FileHash W1R-Mods-Installer.exe` and compare with `SHA256SUMS.txt`.
+
+**2. Check where it was built.** GitHub signs a build attestation for every release file, proving it was built by this repository's workflow from a specific commit. With the [GitHub CLI](https://cli.github.com):
+
+```sh
+gh attestation verify Warcraft-I-for-Mac.zip --repo Vifill/warcraft1-remastered-mods
+```
+
+**3. Rebuild it yourself (optional).** Builds are reproducible: the same source and tool versions give byte-identical files. `build-info.txt` in each release lists the commit and tool versions used. Check out that commit and run:
+
+```sh
+./build.sh && sh tools/package.sh
+```
+
+`dist/SHA256SUMS.txt` should match the release. (The Mac app also depends on the exact Xcode version; the Windows files only on clang and lld.)
+
 ## Troubleshooting
 
 - **Mods don't switch on:** check `w1r_mods.log`. "unexpected bytes" means a different game build.
@@ -64,10 +90,11 @@ Written for game build **1.0.0.2762**.
 Needs Xcode command line tools, `lld` (`brew install lld`) and Python 3:
 
 ```sh
-./build.sh
+./build.sh            # build/VERSION.dll, build/W1R-Mods-Installer.exe, build/Warcraft I for Mac.app
+sh tools/package.sh   # dist/ with the release zip, checksums and build-info.txt
 ```
 
-Outputs `build/VERSION.dll`, `build/W1R-Mods-Installer.exe` and `build/Warcraft I for Mac.app`.
+To publish a release, bump `VERSION`, update `RELEASE_NOTES.md`, then push a tag (`git tag v1.0.0 && git push --tags`). The workflow builds, attests and publishes it.
 
 ## Credits
 

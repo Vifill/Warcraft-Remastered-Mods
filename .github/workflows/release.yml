@@ -1,0 +1,46 @@
+# Builds the release on GitHub's servers from the tagged source, publishes checksums, and
+# attaches signed build provenance so anyone can verify where each file came from:
+#   gh attestation verify <file> --repo Vifill/warcraft1-remastered-mods
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write        # create the release
+  id-token: write        # sign the attestation
+  attestations: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install lld
+        run: brew install lld
+      - name: Build
+        run: sh build.sh
+      - name: Package
+        run: sh tools/package.sh
+      - name: Attest build provenance
+        # Artifact attestations need a public repo (or GitHub Enterprise Cloud).
+        continue-on-error: true
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/Warcraft-I-for-Mac.zip
+            dist/W1R-Mods-Installer.exe
+            dist/VERSION.dll
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Warcraft I: Remastered mods $GITHUB_REF_NAME" \
+            --notes-file RELEASE_NOTES.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
