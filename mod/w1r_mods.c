@@ -145,6 +145,8 @@ int __cdecl w1r_astar(u8 *unit)
     if (sx >= W || sy >= W) { as_fallback++; return 0; }
     int start = sy * W + sx, hn = 0, found = -1, pops = 0;
     as_g[start] = 0; as_seen[start] = gen;
+    /* already in the goal area: let the original code handle arrival (it stops the unit) */
+    if (flags[start] & GOAL_FLAG) { as_fallback++; return 0; }
     as_heap[hn++] = (heur(sx, sy, gx, gy) << 12) | start;
 
     while (hn > 0 && pops < N) {
