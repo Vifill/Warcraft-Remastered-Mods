@@ -131,6 +131,146 @@ func setRegValue(_ text: String, section: String, key: String, value: String) ->
     return text + (text.hasSuffix("\n") ? "" : "\n") + "\n[\(section)] \(stamp)\n\(entry)\n"
 }
 
+// MARK: - Saved games
+
+/// Saved games live outside the Wine environment so Uninstall and reinstall keep them.
+/// The game's save folder inside Wine is a link to `Saves.dir`.
+enum Saves {
+    static let dir = Paths.home.appendingPathComponent("Library/Application Support/Warcraft1Mac Saves")
+
+    struct Source: Identifiable {
+        let folder: URL
+        let orc: Int
+        let human: Int
+        var id: String { folder.path }
+        var total: Int { orc + human }
+        var summary: String { "Orc \(orc) of 12, Human \(human) of 12 missions" }
+    }
+
+    /// `drive_c/users/<user>/Saved Games/WarcraftRemastered` for a drive_c, if the user folder exists.
+    static func saveFolders(in driveC: URL) -> [URL] {
+        let users = driveC.appendingPathComponent("users")
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: users.path)) ?? []
+        // Sikarugir/CrossOver add links (e.g. <mac user> -> Sikarugir); use only real folders.
+        return names.filter { name in
+            name != "Public" && !name.hasPrefix(".") &&
+                (try? FileManager.default.destinationOfSymbolicLink(atPath: users.appendingPathComponent(name).path)) == nil
+        }.map { users.appendingPathComponent("\($0)/Saved Games/WarcraftRemastered") }
+    }
+
+    static func gameFolder() -> URL? { saveFolders(in: Paths.driveC).first }
+
+    static func progress(of folder: URL) -> Source? {
+        let file = folder.appendingPathComponent("GlobalSave.json")
+        guard let text = try? String(contentsOf: file, encoding: .utf8),
+              let end = text.range(of: "}}"),
+              let data = String(text[..<end.upperBound]).data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let done = json["missionsCompleted"] as? [String: Any] else { return nil }
+        return Source(folder: folder, orc: done["orc"] as? Int ?? 0, human: done["human"] as? Int ?? 0)
+    }
+
+    /// Point the game's save folder at `dir`, moving any saves already there into it.
+    static func link() throws {
+        let fm = FileManager.default
+        guard let game = gameFolder() else { return }
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        if let dest = try? fm.destinationOfSymbolicLink(atPath: game.path), dest == dir.path { return }
+        var isDir: ObjCBool = false
+        if fm.fileExists(atPath: game.path, isDirectory: &isDir), isDir.boolValue {
+            let files = try fm.contentsOfDirectory(atPath: game.path)
+            if !files.isEmpty {
+                let existing = (try? fm.contentsOfDirectory(atPath: dir.path)) ?? []
+                if existing.contains(where: { !$0.hasPrefix("backup-") }) {
+                    try backupCurrent(reason: "before-merge")
+                }
+                for f in files {
+                    let dst = dir.appendingPathComponent(f)
+                    try? fm.removeItem(at: dst)
+                    try fm.moveItem(at: game.appendingPathComponent(f), to: dst)
+                }
+            }
+            try fm.removeItem(at: game)
+        } else if fm.fileExists(atPath: game.path) || (try? fm.destinationOfSymbolicLink(atPath: game.path)) != nil {
+            try fm.removeItem(at: game)
+        }
+        try fm.createDirectory(at: game.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: game, withDestinationURL: dir)
+        appendLog("saves: linked \(game.path) -> \(dir.path)")
+    }
+
+    /// Copy the current saves into `dir/backup-<date>-<reason>`. Returns the backup folder.
+    @discardableResult
+    static func backupCurrent(reason: String) throws -> URL? {
+        let fm = FileManager.default
+        let files = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter { !$0.hasPrefix("backup-") }
+        guard !files.isEmpty else { return nil }
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        let backup = dir.appendingPathComponent("backup-\(f.string(from: Date()))-\(reason)")
+        try fm.createDirectory(at: backup, withIntermediateDirectories: true)
+        for name in files { try fm.copyItem(at: dir.appendingPathComponent(name), to: backup.appendingPathComponent(name)) }
+        return backup
+    }
+
+    static func importFrom(_ folder: URL) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        try backupCurrent(reason: "before-import")
+        for name in try fm.contentsOfDirectory(atPath: folder.path) where !name.hasPrefix(".") && !name.hasPrefix("backup-") {
+            let src = folder.appendingPathComponent(name)
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: src.path, isDirectory: &isDir), !isDir.boolValue else { continue }
+            let dst = dir.appendingPathComponent(name)
+            try? fm.removeItem(at: dst)
+            try fm.copyItem(at: src, to: dst)
+        }
+        appendLog("saves: imported from \(folder.path)")
+    }
+
+    /// Warcraft I save folders in other Wine setups: wrappers and prefixes in ~/Wine, ~/Games
+    /// and Applications, CrossOver and Whisky bottles, and ~/.wine.
+    static func otherSources() -> [Source] {
+        let fm = FileManager.default
+        let home = Paths.home
+        var driveCs: [URL] = [home.appendingPathComponent(".wine/drive_c")]
+        func children(_ dir: URL) -> [URL] {
+            ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter { !$0.hasPrefix(".") }
+                .map { dir.appendingPathComponent($0) }
+        }
+        for root in ["Wine", "Games", "Applications"].map({ home.appendingPathComponent($0) })
+            + [URL(fileURLWithPath: "/Applications")] {
+            for item in children(root) {
+                driveCs += [item.appendingPathComponent("drive_c"),
+                            item.appendingPathComponent("prefix/drive_c"),
+                            item.appendingPathComponent("Contents/SharedSupport/prefix/drive_c"),
+                            item.appendingPathComponent("Contents/drive_c")]
+            }
+        }
+        for bottles in ["Library/Application Support/CrossOver/Bottles",
+                        "Library/Containers/com.isaacmarovitz.Whisky/Bottles"] {
+            driveCs += children(home.appendingPathComponent(bottles)).map { $0.appendingPathComponent("drive_c") }
+        }
+        let ours = Paths.driveC.resolvingSymlinksInPath().path
+        var seen = Set<String>()
+        var found: [Source] = []
+        for c in driveCs where fm.fileExists(atPath: c.path) && c.resolvingSymlinksInPath().path != ours {
+            for folder in saveFolders(in: c) {
+                let real = folder.resolvingSymlinksInPath().path
+                guard real != dir.resolvingSymlinksInPath().path, !seen.contains(real),
+                      let s = progress(of: folder) else { continue }
+                seen.insert(real)
+                found.append(s)
+            }
+        }
+        return found.sorted { $0.total > $1.total }
+    }
+}
+
+func wineRunning() -> Bool {
+    (try? run("/usr/bin/pgrep", ["-f", "Warcraft1Mac/Wrapper.app.*wineserver"])) != nil
+}
+
 // MARK: - Model
 
 @MainActor
@@ -143,20 +283,68 @@ final class Model: ObservableObject {
     @Published var step = 0
     @Published var installed = FileManager.default.fileExists(atPath: Paths.installedFlag.path)
     @Published var showUninstall = false
+    @Published var importOffer: Saves.Source?
     let totalSteps = 9
     private var loading = true
 
     init() {
         loadSettings()
         loading = false
+        if installed && !wineRunning() { try? Saves.link() }
         status = installed ? "Ready. Click Play to open Battle.net." :
             "Click Install. Setup downloads about 300 MB and takes a few minutes."
+        if installed { checkImportOffer() }
+    }
+
+    private let declinedFile = Paths.data.appendingPathComponent(".import-declined")
+
+    /// Offer saves from another Wine setup when it has more progress than ours.
+    func checkImportOffer() {
+        let ours = Saves.progress(of: Saves.dir)?.total ?? 0
+        let declined = (try? String(contentsOf: declinedFile, encoding: .utf8)) ?? ""
+        importOffer = Saves.otherSources().first { $0.total > ours && !declined.contains($0.folder.path + "\n") }
+    }
+
+    func declineImport(_ s: Saves.Source) {
+        let declined = ((try? String(contentsOf: declinedFile, encoding: .utf8)) ?? "") + s.folder.path + "\n"
+        try? declined.write(to: declinedFile, atomically: true, encoding: .utf8)
+    }
+
+    func importSaves(from folder: URL) {
+        if (try? run("/usr/bin/pgrep", ["-f", "Warcraft.exe -uid"])) != nil {
+            status = "Quit Warcraft I first, then import again (the game rewrites its saves when it exits)."
+            return
+        }
+        do {
+            try Saves.importFrom(folder)
+            if !wineRunning() { try? Saves.link() }
+            let p = Saves.progress(of: Saves.dir)
+            status = "Saved games imported" + (p.map { " (\($0.summary))." } ?? ".") +
+                " Your previous saves were backed up in the saves folder."
+        } catch {
+            status = "Import failed: \(error.localizedDescription)"
+        }
+    }
+
+    func importManually() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.message = "Choose a WarcraftRemastered saves folder (it contains GlobalSave.json and save files)."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? []
+        guard files.contains(where: { $0 == "GlobalSave.json" || $0.hasSuffix(".sav") }) else {
+            status = "That folder has no Warcraft I saves (GlobalSave.json or .sav files)."
+            return
+        }
+        importSaves(from: url)
     }
 
     func loadSettings() {
         guard let text = try? String(contentsOf: Paths.ini, encoding: .utf8) else { return }
         func value(_ k: String) -> String? {
-            text.split(separator: "\n").first { $0.hasPrefix("\(k)=") }.map { String($0.dropFirst(k.count + 1)) }
+            text.components(separatedBy: .newlines).first { $0.hasPrefix("\(k)=") }
+                .map { String($0.dropFirst(k.count + 1)).trimmingCharacters(in: .whitespaces) }
         }
         ghostFix = value("ghost_fix") != "0"
         middlePan = value("middle_mouse_pan") != "0"
@@ -188,6 +376,7 @@ final class Model: ObservableObject {
                 installed = true
                 status = "Battle.net is starting. Sign in, install Warcraft I: Remastered, and play. " +
                     "Next time just open this app and click Play."
+                checkImportOffer()
             } catch {
                 status = "Setup stopped: \(error.localizedDescription)"
             }
@@ -296,6 +485,7 @@ final class Model: ObservableObject {
         text = setRegValue(text, section: overrides, key: "opengl32", value: "native")
         text = setRegValue(text, section: overrides, key: "version", value: "native,builtin")
         try text.write(to: reg, atomically: true, encoding: .utf8)
+        try Saves.link()
 
         advance("Starting the Battle.net installer…")
         try fm.createDirectory(at: Paths.installedFlag.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -305,6 +495,7 @@ final class Model: ObservableObject {
 
     func play() {
         saveSettings()
+        if !wineRunning() { try? Saves.link() }
         startSync()
         if FileManager.default.fileExists(atPath: Paths.battleNet.path) {
             NSWorkspace.shared.openApplication(at: Paths.wrapper, configuration: .init())
@@ -331,7 +522,7 @@ final class Model: ObservableObject {
         }
         try? FileManager.default.removeItem(at: Paths.data)
         installed = false
-        status = "Removed. Battle.net, the game and all settings for it on this Mac are gone."
+        status = "Removed. Your saved games are kept in \"\(Saves.dir.path)\" and come back if you install again."
     }
 }
 
@@ -368,6 +559,11 @@ struct ContentView: View {
                 Spacer()
                 Menu("More") {
                     Button("Run the Battle.net installer again") { m.reinstallBattleNet() }.disabled(!m.installed)
+                    Button("Import saved games…") { m.importManually() }.disabled(m.busy)
+                    Button("Show saved games in Finder") {
+                        try? FileManager.default.createDirectory(at: Saves.dir, withIntermediateDirectories: true)
+                        NSWorkspace.shared.activateFileViewerSelecting([Saves.dir])
+                    }
                     Button("Show files in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Paths.data]) }
                     Divider()
                     Button("Uninstall…") { m.showUninstall = true }.disabled(m.busy)
@@ -380,13 +576,33 @@ struct ContentView: View {
         .confirmationDialog("Remove the game, Battle.net and Wine from this Mac?", isPresented: $m.showUninstall) {
             Button("Remove everything", role: .destructive) { m.uninstall() }
         } message: {
-            Text("Everything this app set up is deleted. Your Battle.net account and purchases are not affected.")
+            Text("Wine, Battle.net and the game are deleted. Your saved games are kept. Your Battle.net account and purchases are not affected.")
+        }
+        .alert("Import your saved games?", isPresented: Binding(
+            get: { m.importOffer != nil && !m.busy }, set: { if !$0 { m.importOffer = nil } })) {
+            Button("Import") { if let s = m.importOffer { m.importSaves(from: s.folder) }; m.importOffer = nil }
+            Button("Not now", role: .cancel) { if let s = m.importOffer { m.declineImport(s) }; m.importOffer = nil }
+        } message: {
+            Text(m.importOffer.map { "Found Warcraft I saves with more progress (\($0.summary)) in\n\($0.folder.path)\n\nYour current saves are backed up first." } ?? "")
         }
     }
 }
 
 @main
 struct W1RMacApp: App {
+    init() {
+        // Diagnostics without the UI: list save locations, change nothing.
+        if CommandLine.arguments.contains("--list-saves") {
+            print("saves folder: \(Saves.dir.path)")
+            print("current: \(Saves.progress(of: Saves.dir)?.summary ?? "none")")
+            let game = Saves.gameFolder()
+            let link = game.flatMap { try? FileManager.default.destinationOfSymbolicLink(atPath: $0.path) }
+            print("game save folder: \(game?.path ?? "none")\(link.map { " -> \($0)" } ?? " (not linked)")")
+            for s in Saves.otherSources() { print("found: \(s.summary) in \(s.folder.path)") }
+            exit(0)
+        }
+    }
+
     var body: some Scene {
         WindowGroup("Warcraft I for Mac") { ContentView() }
             .windowResizability(.contentSize)
