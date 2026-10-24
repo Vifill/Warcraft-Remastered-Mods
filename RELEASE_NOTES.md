@@ -1,9 +1,9 @@
-Play **Warcraft I: Remastered** on Apple Silicon Macs, with optional mods for Mac and Windows.
+Play **Warcraft I: Remastered** and **Warcraft II: Remastered** on Apple Silicon Macs, with optional Warcraft I mods for Mac and Windows.
 
-**Mac:** download `Warcraft-I-for-Mac.zip`, unzip, right-click the app → Open, click Install.
+**Mac:** download `Warcraft-for-Mac.zip`, unzip, open the app (first time: System Settings → Privacy & Security → Open Anyway), click Install.
 **Windows:** download `W1R-Mods-Installer.exe`, run it, click Install, play from Battle.net.
 
-Mods: crash fix for some saves · middle-mouse drag panning · A* pathfinding (each optional).
+Warcraft I mods: crash fix for some saves · middle-mouse drag panning · A* pathfinding (each optional).
 
 Verify your download: see "Verify your download" in the README (`SHA256SUMS.txt`, build attestations, reproducible builds).
 
