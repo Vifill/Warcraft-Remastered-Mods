@@ -12,7 +12,8 @@
  *
  * Settings: w1r_mods.ini next to this DLL. Log: w1r_mods.log.
  *
- * Warcraft II: Remastered (build 1.0.2.2818, "Warcraft II.exe"): middle_mouse_pan only.
+ * Warcraft II: Remastered (build 1.0.2.2818, "Warcraft II.exe"): middle_mouse_pan and
+ * pathfinding=astar.
  * Settings w2r_mods.ini, log w2r_mods.log.
  */
 #include <stdarg.h>
@@ -106,9 +107,12 @@ static void log_line(const char *fmt, ...)
 #define MAX_STEPS 20
 #define HEAP_CAP 16384
 
-static u16 as_g[N], as_seen[N], as_done[N], as_gen;
-static u8 as_pdir[N], as_trail[N];
-static u32 as_heap[HEAP_CAP];
+#define AS_MAX (128 * 128)                  /* largest map of either game (W2: up to 128x128) */
+#define AS_HEAP (2 * AS_MAX)
+
+static u16 as_g[AS_MAX], as_seen[AS_MAX], as_done[AS_MAX], as_gen;
+static u8 as_pdir[AS_MAX], as_trail[AS_MAX];
+static u32 as_heap[AS_HEAP];
 static u32 as_found, as_fallback;           /* counters, logged on exit */
 
 static int passable(int idx)
@@ -210,6 +214,114 @@ int __cdecl w1r_astar(u8 *unit)
     return 1;
 }
 
+/* ---- A* for Warcraft II ---------------------------------------------------------------
+ * Same search, on W2's square map of up to 128x128 tiles (width at 0x918D10). Units with
+ * flag 2 at +0x1C (2x2 units) move on even tiles with the doubled direction tables, which
+ * the game's findPath has already selected into 0x93483C / 0x934840. */
+static int w2_passable(int idx)
+{
+    u16 f = (*(u16 **)REL(0x91AD58))[idx];
+    if (f & UNIT_FLAG) {
+        u8 *u = (*(u8 ***)REL(0x91AD6C))[idx];
+        if (u) {                            /* as the original line walk at 0x4EC031 */
+            u8 own = u[0x2C];
+            u16 f1c = *(u16 *)(u + 0x1C), f1e = *(u16 *)(u + 0x1E);
+            if (!(*(u8 **)REL(0x93482C))[own])
+                f &= ~UNIT_FLAG;
+            else if (!(f1e & 0x1000) && !(f1c & 0xF000) && (*(u8 **)REL(0x934830))[own] &&
+                     (u[0x08] == 3 || (f1e & 0x4000)))
+                f &= ~UNIT_FLAG;
+        }
+    }
+    return (f & *(u16 *)REL(0x934828)) == 0;
+}
+
+static int w2_astar(u8 *unit)
+{
+    const s8 *ddx = *(const s8 **)REL(0x93483C), *ddy = *(const s8 **)REL(0x934840);
+    u16 *flags = *(u16 **)REL(0x91AD58);
+    int w = *(u16 *)REL(0x918D10);
+    if (w <= 0 || w > 128) { as_fallback++; return 0; }
+    u16 gen = (u16)(as_gen + 1);
+    if (gen == 0) {
+        for (int i = 0; i < AS_MAX; i++) as_seen[i] = as_done[i] = 0;
+        gen = 1;
+    }
+    as_gen = gen;
+
+    int sx = *(s16 *)(unit + 0x18), sy = *(s16 *)(unit + 0x1A);
+    int gx = *(s16 *)REL(0x934820), gy = *(s16 *)REL(0x934822);
+    if ((unsigned)sx >= (unsigned)w || (unsigned)sy >= (unsigned)w) { as_fallback++; return 0; }
+    int n_tiles = w * w, start = sy * w + sx, hn = 0, found = -1, pops = 0;
+    as_g[start] = 0; as_seen[start] = gen;
+    /* already in the goal area: let the original code handle arrival (it stops the unit) */
+    if (flags[start] & GOAL_FLAG) { as_fallback++; return 0; }
+    as_heap[hn++] = (heur(sx, sy, gx, gy) << 14) | start;
+
+    while (hn > 0 && pops < n_tiles) {
+        u32 top = as_heap[0], last = as_heap[--hn];
+        int i = 0;
+        for (;;) {
+            int c = 2 * i + 1;
+            if (c >= hn) break;
+            if (c + 1 < hn && as_heap[c + 1] < as_heap[c]) c++;
+            if (as_heap[c] >= last) break;
+            as_heap[i] = as_heap[c]; i = c;
+        }
+        if (hn > 0) as_heap[i] = last;
+
+        int cur = top & 0x3FFF;
+        if (as_done[cur] == gen) continue;
+        as_done[cur] = gen;
+        pops++;
+        if (cur != start && (flags[cur] & GOAL_FLAG)) { found = cur; break; }
+
+        int cx = cur % w, cy = cur / w;
+        for (int d = 0; d < 8; d++) {
+            int nx = cx + ddx[d], ny = cy + ddy[d];
+            if ((unsigned)nx >= (unsigned)w || (unsigned)ny >= (unsigned)w) continue;
+            int n = ny * w + nx;
+            if (as_done[n] == gen || !w2_passable(n)) continue;
+            u32 ng = as_g[cur] + ((d & 1) ? 14 : 10);
+            if (ng > 0xFFFF || (as_seen[n] == gen && ng >= as_g[n])) continue;
+            as_seen[n] = gen; as_g[n] = (u16)ng; as_pdir[n] = (u8)d;
+            if (hn >= AS_HEAP) continue;
+            u32 key = ((ng + heur(nx, ny, gx, gy)) << 14) | n;
+            int j = hn++;
+            while (j > 0) {
+                int p = (j - 1) >> 1;
+                if (as_heap[p] <= key) break;
+                as_heap[j] = as_heap[p]; j = p;
+            }
+            as_heap[j] = key;
+        }
+    }
+    if (found < 0) { as_fallback++; return 0; }
+
+    int len = 0, cur = found;
+    while (cur != start && len < n_tiles) {
+        u8 d = as_pdir[cur];
+        as_trail[len++] = d;
+        cur -= ddy[d] * w + ddx[d];
+    }
+    if (cur != start) { as_fallback++; return 0; }
+
+    u8 *path = unit + 0x30;
+    int k = 0;
+    for (; k < MAX_STEPS && k < len; k++) path[k] = as_trail[len - 1 - k];
+    for (; k < MAX_STEPS; k++) path[k] = 0xFF;
+    unit[0x7E] = 0;
+    as_found++;
+    return 1;
+}
+
+/* Replaces findPath's call to the original search (0x4EC9C0) at 0x4EC858. */
+static void(__cdecl *w2_orig_search)(u8 *);
+static void __cdecl w2_search(u8 *unit)
+{
+    if (!w2_astar(unit)) w2_orig_search(unit);
+}
+
 /* ---- patching ------------------------------------------------------------------------- */
 static int bytes_equal(const u8 *a, const u8 *b, int n)
 {
@@ -239,6 +351,26 @@ static int install_jump(const char *name, u32 va, const u8 *expect, int len, voi
     return 1;
 }
 
+/* Redirect the 5-byte `call old_target` at game address `va` to `to`. */
+static int install_call(const char *name, u32 va, u32 old_target, void *to)
+{
+    u8 *site = REL(va);
+    if (site[0] != 0xE8 || *(u32 *)(site + 1) != old_target - (va + 5)) {
+        log_line("%s: unexpected bytes at %x, skipped (different game build?)", name, va);
+        return 0;
+    }
+    u32 old;
+    if (!VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &old)) {
+        log_line("%s: VirtualProtect failed, skipped", name);
+        return 0;
+    }
+    *(u32 *)(site + 1) = (u32)((u8 *)to - (site + 5));
+    VirtualProtect(site, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, 5);
+    log_line("%s: installed", name);
+    return 1;
+}
+
 static int is_on(const char *key, int def) { return (int)GetPrivateProfileIntA("mods", key, def, g_ini); }
 
 static void pan_settings(void)
@@ -262,6 +394,14 @@ static void patch_w2(void)
         g_pan_ret = REL(0x4DF660);
         pan_settings();
         install_jump("middle_mouse_pan", 0x4DF656, pan, sizeof pan, pan2_handler);
+    }
+    char pf[32];
+    GetPrivateProfileStringA("mods", "pathfinding", "astar", pf, sizeof pf, g_ini);
+    if (pf[0] == 'a' || pf[0] == 'A') {
+        w2_orig_search = (void(__cdecl *)(u8 *))REL(0x4EC9C0);
+        install_call("pathfinding_astar", 0x4EC858, 0x4EC9C0, (void *)w2_search);
+    } else {
+        log_line("pathfinding: original");
     }
 }
 

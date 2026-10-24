@@ -111,13 +111,41 @@ name); W2 uses `w2r_mods.ini` / `w2r_mods.log`.
   `mscroll` -> `0x964CAC`, `kscroll` -> `0x964CB0`, `music`, `sfx`, `vidmouse`, `tipnum`, `intro`...
   Following a setting's variable is a quick way into the code that uses it.
 
+## Map and units
+| VA | What |
+|---|---|
+| `0x918D10` | map width in tiles (u16); maps are square, up to 128x128 |
+| `[0x91AD58]` | `u16*` tile flags, index `y*W+x`. `0x100` = unit on tile, `0x8000` goal area mark, `0x2000` visited by line walk |
+| `[0x91AD6C]` | `unit**` unit on each tile |
+| `[0x91AD74]` | `u8*` per-tile direction trail used by the original search (`0xFF` = none) |
+| `0x8BF100` / `0x8BF108` | `s8[8]` dx / dy, 0=N clockwise (same as W1); doubled copies at `0x8BF110` / `0x8BF118` for 2x2 units |
+| `0x9185F0` | `u32[type]` unit type flags (`0x80000` can attack, `0x6000300` workers/casters...) |
+| `0x919578` | `u8[16][16]` ally table, row = owner |
+| `0x918CAC` | `u8[owner]` player kind (1 = human player) |
+
+Unit struct (partial): `+0x08` state, `+0x18`/`+0x1A` tile x/y (s16), `+0x1C`/`+0x1E` flags (u16;
+`+0x1C & 2` = 2x2 unit, moves on even tiles), `+0x27` type, `+0x2A` movement type, `+0x2C` owner,
+`+0x2E` order, `+0x30..+0x43` path buffer (20 direction bytes, `0xFF` = end), `+0x54` attacker /
+current target, `+0x7E` path read index, `+0x84` order destination (x,y), `+0x88` order target unit.
+
+## Pathfinding (mod: pathfinding=astar)
+- `findPath(unit)` = `0x4EC6B0`, same design as W1: 20 steps at a time; straight line (`0x4EBF50`),
+  else wall-follow both ways (`0x4ECB30`), keep the shorter. Path copied by `0x4EC5E0(buf, n)`.
+- Setup in findPath: start `0x934824`, goal `0x934820` (from `0x4C3C80`), blocking mask `0x934828`
+  (from `0x8C1AC8[movement type]`), ally rows `0x93482C` / `0x934830`, direction tables
+  `0x93483C` / `0x934840`, 2x2 flag `0x934838`. Goal area marked by `0x4EC1C0(mask, target)`.
+- Passability (line walk at `0x4EC025`): tile with a unit is passable if `[0x93482C][owner] == 0`,
+  or if `[0x934830][owner] != 0`, unit flags `+0x1E & 0x1000` and `+0x1C & 0xF000` clear, and
+  (`state == 3` or `+0x1E & 0x4000`). A stale `0x100` flag with no unit blocks (unlike W1).
+- Hook: the `call 0x4EC9C0` (search) at `0x4EC858` is redirected to `w2_search`, which runs A* and
+  calls the original search when A* finds nothing. Same arrival rule as W1. Tested, much better.
+
 ## Camera and mouse (mod: middle_mouse_pan)
 | VA | What |
 |---|---|
 | `0x91AD80` / `0x91AD84` | camera x / y in map pixels (int, 32 px per tile) |
 | `0x9650F8` / `0x9650FA` | mouse x / y (s16, same scale as the camera) |
 | `0x91CB08` / `0x91CB0C` | view width / height (u16) |
-| `0x918D10` | map width in tiles (u16) |
 | `0x4DF500` | scroll(): edge scrolling, every 10 ms; calls key scroll `0x4DF2E0` |
 | `0x4AFD00` | clamp camera to the map |
 

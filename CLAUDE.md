@@ -46,8 +46,9 @@ Open:
 3. Warcraft II: works on Mac with the same WineMetalGL override for `Warcraft II.exe` (set by hand
    on the dev Mac; confirm it starts). Add WC2 support to the Mac app (overrides + DLL copy +
    sync_mods for the WC2 folder).
-4. Warcraft II mods: middle_mouse_pan done and tested (Windows), see the W2 part of NOTES.md.
-   Next candidates: tile grid, pathfinder. It is 32-bit, imports VERSION.dll and ClientSdk.dll,
+4. Warcraft II mods: middle_mouse_pan and A* pathfinding done and tested (Windows), see the W2
+   part of NOTES.md.
+   Next: AI/control complaints (idle units not attacking, attack-move). It is 32-bit, imports VERSION.dll and ClientSdk.dll,
    has ASLR; W1 addresses do not apply. On Windows, x64dbg /
    Cheat Engine make finding them easy.
 5. Release: bump `VERSION`, update `RELEASE_NOTES.md`, `git tag v1.0.0 && git push --tags`.
