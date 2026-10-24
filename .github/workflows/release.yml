@@ -1,6 +1,6 @@
 # Builds the release on GitHub's servers from the tagged source, publishes checksums, and
 # attaches signed build provenance so anyone can verify where each file came from:
-#   gh attestation verify <file> --repo Vifill/warcraft1-remastered-mods
+#   gh attestation verify <file> --repo Vifill/Warcraft-Remastered-Mods
 name: release
 on:
   push:

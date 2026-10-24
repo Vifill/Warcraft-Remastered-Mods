@@ -76,7 +76,7 @@ On Windows (PowerShell): `Get-FileHash W1R-Mods-Installer.exe` and compare with 
 **2. Check where it was built.** GitHub signs a build attestation for every release file, proving it was built by this repository's workflow from a specific commit. With the [GitHub CLI](https://cli.github.com):
 
 ```sh
-gh attestation verify Warcraft-for-Mac.zip --repo Vifill/warcraft1-remastered-mods
+gh attestation verify Warcraft-for-Mac.zip --repo Vifill/Warcraft-Remastered-Mods
 ```
 
 **3. Rebuild it yourself (optional).** Builds are reproducible: the same source and tool versions give byte-identical files. `build-info.txt` in each release lists the commit and tool versions used. Check out that commit and run:

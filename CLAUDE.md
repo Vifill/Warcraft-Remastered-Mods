@@ -1,7 +1,7 @@
 # Warcraft I & II: Remastered — Mac support and mods
 
 Fan project: run Warcraft I & II: Remastered on Apple Silicon Macs via Wine ("Warcraft I & II for
-Mac" app), and mod Warcraft I (Mac and Windows). Private repo `Vifill/warcraft1-remastered-mods`. See `README.md` for users and
+Mac" app), and mod Warcraft I (Mac and Windows). Private repo `Vifill/Warcraft-Remastered-Mods`. See `README.md` for users and
 **`docs/NOTES.md` for every game address, data structure and finding** — read it before modding.
 
 ## Layout
