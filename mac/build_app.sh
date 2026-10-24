@@ -1,8 +1,8 @@
 #!/bin/sh
-# Build "Warcraft I for Mac.app" into $1 (build dir). $2 = version.
+# Build "Warcraft I & II for Mac.app" into $1 (build dir). $2 = version.
 set -eu
 B="$1"; VERSION="$2"
-APP="$B/Warcraft I for Mac.app"
+APP="$B/Warcraft I & II for Mac.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 swiftc -O -parse-as-library -target arm64-apple-macos14.0 mac/W1RMac.swift -o "$APP/Contents/MacOS/W1RMac"
@@ -13,8 +13,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
 <plist version="1.0"><dict>
   <key>CFBundleExecutable</key><string>W1RMac</string>
   <key>CFBundleIdentifier</key><string>io.github.vifill.warcraft1-mac</string>
-  <key>CFBundleName</key><string>Warcraft I for Mac</string>
-  <key>CFBundleDisplayName</key><string>Warcraft I for Mac</string>
+  <key>CFBundleName</key><string>Warcraft I &amp; II for Mac</string>
+  <key>CFBundleDisplayName</key><string>Warcraft I &amp; II for Mac</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>

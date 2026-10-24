@@ -11,11 +11,11 @@ rm -rf dist && mkdir -p dist
 # across builds of the same source with the same tools.
 STAGE=build/stage
 rm -rf "$STAGE" && mkdir -p "$STAGE"
-cp -R "build/Warcraft I for Mac.app" "$STAGE/"
+cp -R "build/Warcraft I & II for Mac.app" "$STAGE/"
 find "$STAGE" -exec touch -h -t 200001010000 {} +
-find "$STAGE" -type f -exec chmod 644 {} + && chmod 755 "$STAGE/Warcraft I for Mac.app/Contents/MacOS/W1RMac"
+find "$STAGE" -type f -exec chmod 644 {} + && chmod 755 "$STAGE/Warcraft I & II for Mac.app/Contents/MacOS/W1RMac"
 find "$STAGE" -type d -exec chmod 755 {} +
-(cd "$STAGE" && find "Warcraft I for Mac.app" | LC_ALL=C sort | TZ=UTC zip -X -q -D -@ "../../dist/Warcraft-I-for-Mac.zip")
+(cd "$STAGE" && find "Warcraft I & II for Mac.app" | LC_ALL=C sort | TZ=UTC zip -X -q -D -@ "../../dist/Warcraft-for-Mac.zip")
 rm -rf "$STAGE"
 
 cp build/W1R-Mods-Installer.exe dist/
@@ -30,5 +30,5 @@ cp build/VERSION.dll dist/VERSION.dll
   echo "swiftc: $(swiftc --version 2>&1 | head -1)"
 } > dist/build-info.txt
 
-(cd dist && shasum -a 256 Warcraft-I-for-Mac.zip W1R-Mods-Installer.exe VERSION.dll > SHA256SUMS.txt)
+(cd dist && shasum -a 256 Warcraft-for-Mac.zip W1R-Mods-Installer.exe VERSION.dll > SHA256SUMS.txt)
 cat dist/SHA256SUMS.txt

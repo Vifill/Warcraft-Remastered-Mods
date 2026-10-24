@@ -1,7 +1,7 @@
-# Warcraft I: Remastered — Mac support and mods
+# Warcraft I & II: Remastered — Mac support and mods
 
-Fan project: run Warcraft I: Remastered on Apple Silicon Macs via Wine, and mod the game
-(Mac and Windows). Private repo `Vifill/warcraft1-remastered-mods`. See `README.md` for users and
+Fan project: run Warcraft I & II: Remastered on Apple Silicon Macs via Wine ("Warcraft I & II for
+Mac" app), and mod Warcraft I (Mac and Windows). Private repo `Vifill/Warcraft-Remastered-Mods`. See `README.md` for users and
 **`docs/NOTES.md` for every game address, data structure and finding** — read it before modding.
 
 ## Layout
@@ -43,11 +43,13 @@ Open:
    "right-click → Open" for unsigned apps: users must click **Open Anyway** in System Settings →
    Privacy & Security. Update the README Mac steps accordingly.
 2. Test the GitHub-built `VERSION.dll` in game (log should show all three mods `installed`).
-3. Warcraft II: works on Mac with the same WineMetalGL override for `Warcraft II.exe` (set by hand
-   on the dev Mac; confirm it starts). Add WC2 support to the Mac app (overrides + DLL copy +
-   sync_mods for the WC2 folder).
+3. Warcraft II: supported by the Mac app (WineMetalGL overrides for `Warcraft II.exe` and the Map
+   Editor, file sync, saves in `Warcraft1Mac Saves/Warcraft II`). Verified launching it remotely via
+   Battle.net `--exec="launch W2R"` (wrapper "Program Flags"): intro cinematic renders. WC2 saves:
+   `Saved Games\Warcraft2Remastered`, GlobalSave keys todOrc/todHuman (14), bdpOrc/bdpHuman (12).
 4. Warcraft II mods: middle_mouse_pan and A* pathfinding done and tested (Windows), see the W2
-   part of NOTES.md.
+   part of NOTES.md. The Mac app loads them too (version=native,builtin for `Warcraft II.exe`,
+   VERSION.dll + w2r_mods.ini synced into the W2 folder).
    Next: AI/control complaints (idle units not attacking, attack-move). It is 32-bit, imports
    VERSION.dll and ClientSdk.dll, has ASLR; W1 addresses do not apply. On Windows, x64dbg /
    Cheat Engine make finding them easy.

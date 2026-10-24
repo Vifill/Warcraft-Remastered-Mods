@@ -1,6 +1,7 @@
-# Warcraft I: Remastered — Mac support and mods
+# Warcraft I & II: Remastered — Mac support and mods
 
-Play **Warcraft I: Remastered** on Apple Silicon Macs, plus three optional mods for Mac and Windows:
+Play **Warcraft I: Remastered** and **Warcraft II: Remastered** on Apple Silicon Macs, plus three optional
+Warcraft I mods for Mac and Windows:
 
 | Mod | What it does |
 |---|---|
@@ -8,20 +9,27 @@ Play **Warcraft I: Remastered** on Apple Silicon Macs, plus three optional mods 
 | **Middle-mouse panning** | Hold the middle mouse button (scroll wheel) and drag to move the map. |
 | **Smarter pathfinding** | Units plan routes with A* instead of the original "walk straight, then hug the wall" logic, so they stop getting stuck behind forests and walls. Falls back to the original when a target can't be reached. |
 
-Unofficial, made by fans. Not affiliated with or endorsed by Blizzard Entertainment. You need your own Battle.net account and a copy of Warcraft I: Remastered.
+Unofficial, made by fans. Not affiliated with or endorsed by Blizzard Entertainment. You need your own Battle.net account and your own copies of the games.
 
 ## Mac
 
 Requires an Apple Silicon Mac on macOS 14 or later, and about 3 GB of free space.
 
-1. Download **Warcraft-I-for-Mac.zip** from [Releases](../../releases) and unzip it.
-2. Move **Warcraft I for Mac** to Applications. The first time, **right-click it → Open → Open** (the app isn't notarized by Apple, so macOS asks once).
+1. Download **Warcraft-for-Mac.zip** from [Releases](../../releases) and unzip it.
+2. Move **Warcraft I & II for Mac** to Applications and open it. The app isn't notarized by Apple, so the
+   first time macOS refuses to open it: click **Done**, then open **System Settings → Privacy & Security**,
+   scroll down and click **Open Anyway** next to the app's name. macOS only asks once.
 3. Pick your mods and click **Install**. It downloads free Wine and graphics support (about 300 MB, checksums verified) and starts the Battle.net installer.
-4. In Battle.net: sign in, install **Warcraft I: Remastered**, and click **Play**.
+4. In Battle.net: sign in, install **Warcraft I: Remastered** and/or **Warcraft II: Remastered**, and click **Play**.
 
-Next time, open **Warcraft I for Mac** and click **Play**. Changes to the mod checkboxes apply the next time the game starts.
+Next time, open **Warcraft I & II for Mac** and click **Play**. Changes to the mod checkboxes apply the next time Warcraft I starts.
 
-**How it works:** the app sets up a free Wine environment built from CrossOver's open-source code ([Sikarugir](https://github.com/Sikarugir-App)), which runs 32-bit Windows programs like Battle.net and the game correctly on Apple Silicon. It adds [WineMetalGL](https://github.com/metalsharp/WineMetalGL) because the game needs OpenGL 4.6, which macOS doesn't provide, sets `SDL_AUDIODRIVER=directsound` to avoid crackling audio, and installs the mods. Everything lives in `~/Library/Application Support/Warcraft1Mac`; **More → Uninstall** removes it.
+**Saved games** are kept in `~/Library/Application Support/Warcraft1Mac Saves`, outside the Wine environment,
+so uninstalling and reinstalling keeps them. If the app finds Warcraft saves with more progress in another Wine
+setup (CrossOver, Whisky, Sikarugir or Wineskin wrappers, `~/.wine`), it offers to import them; **More → Import
+saved games…** picks a folder by hand. Imports back up what they replace.
+
+**How it works:** the app sets up a free Wine environment built from CrossOver's open-source code ([Sikarugir](https://github.com/Sikarugir-App)), which runs 32-bit Windows programs like Battle.net and the games correctly on Apple Silicon. It adds [WineMetalGL](https://github.com/metalsharp/WineMetalGL) because both games need OpenGL 4.6, which macOS doesn't provide, sets `SDL_AUDIODRIVER=directsound` to avoid crackling audio, and installs the mods. Everything lives in `~/Library/Application Support/Warcraft1Mac`; **More → Uninstall** removes it.
 
 ## Windows
 
@@ -68,7 +76,7 @@ On Windows (PowerShell): `Get-FileHash W1R-Mods-Installer.exe` and compare with 
 **2. Check where it was built.** GitHub signs a build attestation for every release file, proving it was built by this repository's workflow from a specific commit. With the [GitHub CLI](https://cli.github.com):
 
 ```sh
-gh attestation verify Warcraft-I-for-Mac.zip --repo Vifill/warcraft1-remastered-mods
+gh attestation verify Warcraft-for-Mac.zip --repo Vifill/Warcraft-Remastered-Mods
 ```
 
 **3. Rebuild it yourself (optional).** Builds are reproducible: the same source and tool versions give byte-identical files. `build-info.txt` in each release lists the commit and tool versions used. Check out that commit and run:
@@ -90,7 +98,7 @@ gh attestation verify Warcraft-I-for-Mac.zip --repo Vifill/warcraft1-remastered-
 Needs Xcode command line tools, `lld` (`brew install lld`) and Python 3:
 
 ```sh
-./build.sh            # build/VERSION.dll, build/W1R-Mods-Installer.exe, build/Warcraft I for Mac.app
+./build.sh            # build/VERSION.dll, build/W1R-Mods-Installer.exe, build/Warcraft I & II for Mac.app
 sh tools/package.sh   # dist/ with the release zip, checksums and build-info.txt
 ```
 
