@@ -20,9 +20,10 @@ rm -rf "$STAGE"
 
 cp build/W1R-Mods-Installer.exe dist/
 cp build/VERSION.dll dist/VERSION.dll
+cp mod/w1r_mods.ini mod/w2r_mods.ini dist/
 
 {
-  echo "Warcraft I: Remastered mods $VERSION"
+  echo "Warcraft I & II: Remastered mods $VERSION"
   echo "commit: $(git rev-parse HEAD 2>/dev/null || echo unknown)"
   echo "macOS: $(sw_vers -productVersion) ($(uname -m))"
   echo "clang: $(clang --version | head -1)"
@@ -30,5 +31,5 @@ cp build/VERSION.dll dist/VERSION.dll
   echo "swiftc: $(swiftc --version 2>&1 | head -1)"
 } > dist/build-info.txt
 
-(cd dist && shasum -a 256 Warcraft-for-Mac.zip W1R-Mods-Installer.exe VERSION.dll > SHA256SUMS.txt)
+(cd dist && shasum -a 256 Warcraft-for-Mac.zip W1R-Mods-Installer.exe VERSION.dll w1r_mods.ini w2r_mods.ini > SHA256SUMS.txt)
 cat dist/SHA256SUMS.txt
