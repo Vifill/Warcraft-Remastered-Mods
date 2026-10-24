@@ -48,8 +48,8 @@ Open:
    sync_mods for the WC2 folder).
 4. Warcraft II mods: middle_mouse_pan and A* pathfinding done and tested (Windows), see the W2
    part of NOTES.md.
-   Next: AI/control complaints (idle units not attacking, attack-move). It is 32-bit, imports VERSION.dll and ClientSdk.dll,
-   has ASLR; W1 addresses do not apply. On Windows, x64dbg /
+   Next: AI/control complaints (idle units not attacking, attack-move). It is 32-bit, imports
+   VERSION.dll and ClientSdk.dll, has ASLR; W1 addresses do not apply. On Windows, x64dbg /
    Cheat Engine make finding them easy.
 5. Release: bump `VERSION`, update `RELEASE_NOTES.md`, `git tag v1.0.0 && git push --tags`.
    Repo is private; making it public enables attestations.
