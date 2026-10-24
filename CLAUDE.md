@@ -24,7 +24,8 @@ Fan project: run Warcraft I: Remastered on Apple Silicon Macs via Wine, and mod 
   `sh tools/package.sh`. Builds are reproducible (`/brepro`, deterministic zip).
 - Windows: the code is plain C/asm for clang + lld-link (i386-pc-windows-msvc, no CRT, no SDK);
   `build.sh` needs a POSIX shell (Git Bash) and LLVM for Windows (`clang`, `lld-link`) + python.
-  The Mac app part only builds on a Mac.
+  The Mac app part only builds on a Mac. In Git Bash set `MSYS2_ARG_CONV_EXCL='*'` (else lld-link
+  `/flags` are turned into paths) and put `C:Program Fileslvmbin` on path.
 
 ## Conventions
 - Game addresses are VAs at base 0x400000; always go through `REL()` (ASLR on Windows).
@@ -45,8 +46,9 @@ Open:
 3. Warcraft II: works on Mac with the same WineMetalGL override for `Warcraft II.exe` (set by hand
    on the dev Mac; confirm it starts). Add WC2 support to the Mac app (overrides + DLL copy +
    sync_mods for the WC2 folder).
-4. Possibly mod Warcraft II the same way: it is 32-bit, imports VERSION.dll and ClientSdk.dll,
-   has ASLR. Addresses must be found again (tile grid, camera, pathfinder). On Windows, x64dbg /
+4. Warcraft II mods: middle_mouse_pan done and tested (Windows), see the W2 part of NOTES.md.
+   Next candidates: tile grid, pathfinder. It is 32-bit, imports VERSION.dll and ClientSdk.dll,
+   has ASLR; W1 addresses do not apply. On Windows, x64dbg /
    Cheat Engine make finding them easy.
 5. Release: bump `VERSION`, update `RELEASE_NOTES.md`, `git tag v1.0.0 && git push --tags`.
    Repo is private; making it public enables attestations.

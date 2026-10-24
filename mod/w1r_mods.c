@@ -11,6 +11,9 @@
  * seconds after launch instead of on disk.
  *
  * Settings: w1r_mods.ini next to this DLL. Log: w1r_mods.log.
+ *
+ * Warcraft II: Remastered (build 1.0.2.2818, "Warcraft II.exe"): middle_mouse_pan only.
+ * Settings w2r_mods.ini, log w2r_mods.log.
  */
 #include <stdarg.h>
 
@@ -59,7 +62,8 @@ u8 g_pan_held;
 u8 *g_astar_cleanup, *g_astar_resume;
 void *g_GetAsyncKeyState;
 
-extern void ghost_handler(void), pan_handler(void), astar_handler(void);
+extern void ghost_handler(void), pan_handler(void), pan2_handler(void), astar_handler(void);
+static int g_game;                          /* 1 = Warcraft I, 2 = Warcraft II */
 
 /* ---- settings and log ----------------------------------------------------------------- */
 static char g_dir[260], g_ini[300], g_logpath[300];
@@ -237,6 +241,30 @@ static int install_jump(const char *name, u32 va, const u8 *expect, int len, voi
 
 static int is_on(const char *key, int def) { return (int)GetPrivateProfileIntA("mods", key, def, g_ini); }
 
+static void pan_settings(void)
+{
+    g_GetAsyncKeyState = (void *)GetAsyncKeyState;
+    int speed = (int)GetPrivateProfileIntA("mods", "pan_speed_percent", 100, g_ini);
+    if (speed < 10) speed = 10;
+    if (speed > 500) speed = 500;
+    g_pan_scale = speed * 256 / 100;
+}
+
+/* Warcraft II: Remastered, build 1.0.2.2818 */
+static void patch_w2(void)
+{
+    if (is_on("middle_mouse_pan", 1)) {
+        u8 pan[10] = {0x98, 0x01, 0x05, 0, 0, 0, 0, 0x0f, 0xbf, 0xc1};  /* cwde; add [cam_x],eax; movsx eax,cx */
+        *(u32 *)(pan + 3) = (u32)REL(0x91AD80);
+        g_mouse_x = (s16 *)REL(0x9650F8);
+        g_mouse_y = (s16 *)REL(0x9650FA);
+        g_cam_x = (int *)REL(0x91AD80);
+        g_pan_ret = REL(0x4DF660);
+        pan_settings();
+        install_jump("middle_mouse_pan", 0x4DF656, pan, sizeof pan, pan2_handler);
+    }
+}
+
 static u32 WINAPI patch_thread(void *arg)
 {
     (void)arg;
@@ -245,6 +273,10 @@ static u32 WINAPI patch_thread(void *arg)
 
     g_base = (u8 *)GetModuleHandleA(0);
     log_line("game base %x, patching after %d ms", (u32)g_base, (int)delay);
+    if (g_game == 2) {
+        patch_w2();
+        return 0;
+    }
     g_tile_flags_pp = (u16 **)REL(0x735318);
 
     if (is_on("ghost_fix", 1)) {
@@ -260,11 +292,7 @@ static u32 WINAPI patch_thread(void *arg)
         g_mouse_y = (s16 *)REL(0x743CCA);
         g_cam_x = (int *)REL(0x747698);
         g_pan_ret = REL(0x4F247D);
-        g_GetAsyncKeyState = (void *)GetAsyncKeyState;
-        int speed = (int)GetPrivateProfileIntA("mods", "pan_speed_percent", 100, g_ini);
-        if (speed < 10) speed = 10;
-        if (speed > 500) speed = 500;
-        g_pan_scale = speed * 256 / 100;
+        pan_settings();
         install_jump("middle_mouse_pan", 0x4F2474, pan, sizeof pan, pan_handler);
     }
     char pf[32];
@@ -302,6 +330,17 @@ static void load_real_version(void)
     VERSION_FUNCS(RESOLVE)
 }
 
+/* case-insensitive compare of a file name with a lower-case name */
+static int name_is(const char *s, const char *want)
+{
+    for (int i = 0; ; i++) {
+        char c = s[i];
+        if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
+        if (c != want[i]) return 0;
+        if (!c) return 1;
+    }
+}
+
 BOOL WINAPI DllMain(HANDLE inst, u32 reason, void *reserved)
 {
     (void)reserved;
@@ -309,29 +348,25 @@ BOOL WINAPI DllMain(HANDLE inst, u32 reason, void *reserved)
     DisableThreadLibraryCalls(inst);
     load_real_version();
 
-    u32 n = GetModuleFileNameA(inst, g_dir, 260);
-    while (n && g_dir[n - 1] != '\\' && g_dir[n - 1] != '/') n--;
-    g_dir[n] = 0;
-    str_copy(g_ini, g_dir); str_cat(g_ini, "w1r_mods.ini");
-    str_copy(g_logpath, g_dir); str_cat(g_logpath, "w1r_mods.log");
-
-    /* only patch the game itself, not other programs that happen to load this DLL */
+    /* only patch the games, not other programs that happen to load this DLL */
     char exe[260];
     u32 m = GetModuleFileNameA(0, exe, 260);
     const char *base = exe + m;
     while (base > exe && base[-1] != '\\' && base[-1] != '/') base--;
-    const char *want = "warcraft.exe";
-    int match = 1;
-    for (int i = 0; ; i++) {
-        char c = base[i];
-        if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
-        if (c != want[i]) { match = 0; break; }
-        if (!c) break;
-    }
-    if (!match || !GetPrivateProfileIntA("mods", "enabled", 1, g_ini)) return 1;
+    if (name_is(base, "warcraft.exe")) g_game = 1;
+    else if (name_is(base, "warcraft ii.exe")) g_game = 2;
+    else return 1;
+
+    u32 n = GetModuleFileNameA(inst, g_dir, 260);
+    while (n && g_dir[n - 1] != '\\' && g_dir[n - 1] != '/') n--;
+    g_dir[n] = 0;
+    const char *stem = g_game == 2 ? "w2r_mods" : "w1r_mods";
+    str_copy(g_ini, g_dir); str_cat(g_ini, stem); str_cat(g_ini, ".ini");
+    str_copy(g_logpath, g_dir); str_cat(g_logpath, stem); str_cat(g_logpath, ".log");
+    if (!GetPrivateProfileIntA("mods", "enabled", 1, g_ini)) return 1;
 
     g_log = CreateFileA(g_logpath, 0x40000000 /* GENERIC_WRITE */, 1, 0, 2 /* CREATE_ALWAYS */, 0x80, 0);
-    log_line("Warcraft I Remastered mods v%s loaded", MOD_VERSION);
+    log_line("Warcraft %s Remastered mods v%s loaded", g_game == 2 ? "II" : "I", MOD_VERSION);
     HANDLE t = CreateThread(0, 0, patch_thread, 0, 0, 0);
     if (t) CloseHandle(t);
     return 1;
