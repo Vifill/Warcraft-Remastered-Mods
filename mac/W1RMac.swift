@@ -14,6 +14,7 @@ enum Paths {
     static let installedFlag = data.appendingPathComponent(".installed")
     static let log = data.appendingPathComponent("install.log")
     static let ini = mods.appendingPathComponent("w1r_mods.ini")
+    static let ini2 = mods.appendingPathComponent("w2r_mods.ini")
     static let launcher = wrapper.appendingPathComponent("Contents/MacOS/Sikarugir")
     static let engine = wrapper.appendingPathComponent("Contents/SharedSupport/wine")
     static let prefix = wrapper.appendingPathComponent("Contents/SharedSupport/prefix")
@@ -343,7 +344,9 @@ enum Saves {
 // MARK: - Wine environment
 
 /// Registry settings every install needs; applied at install and to existing installs on launch.
-func applyRegistry() throws {
+/// With `dryRun` only reports whether anything would change.
+@discardableResult
+func applyRegistry(dryRun: Bool = false) throws -> Bool {
     let reg = Paths.prefix.appendingPathComponent("user.reg")
     let before = try String(contentsOf: reg, encoding: .utf8)
     var text = setRegValue(before, section: "Environment", key: "SDL_AUDIODRIVER", value: "directsound")
@@ -353,20 +356,48 @@ func applyRegistry() throws {
             text = setRegValue(text, section: section, key: "opengl32", value: "native")
         }
     }
-    let w1 = "Software\\\\Wine\\\\AppDefaults\\\\Warcraft.exe\\\\DllOverrides"
-    text = setRegValue(text, section: w1, key: "version", value: "native,builtin")
-    if text != before {
+    for exe in ["Warcraft.exe", "Warcraft II.exe"] {        // the mod DLL (stand-in VERSION.dll)
+        let section = "Software\\\\Wine\\\\AppDefaults\\\\\(exe)\\\\DllOverrides"
+        text = setRegValue(text, section: section, key: "version", value: "native,builtin")
+    }
+    guard text != before else { return false }
+    if !dryRun {
         try text.write(to: reg, atomically: true, encoding: .utf8)
         appendLog("registry: updated")
     }
+    return true
 }
 
-/// Keep the copy of sync_mods.sh in the data folder current with this app version.
-func refreshSyncScript() {
-    let src = Paths.resources.appendingPathComponent("sync_mods.sh")
-    let dst = Paths.data.appendingPathComponent("sync_mods.sh")
-    guard let new = try? Data(contentsOf: src), (try? Data(contentsOf: dst)) != new else { return }
-    try? new.write(to: dst)
+func gameRunning() -> Bool {
+    (try? run("/usr/bin/pgrep", ["-f", "Warcraft.exe -uid|Warcraft II.exe"])) != nil
+}
+
+/// Stop this install's Wine (Battle.net and its background Agent) and wait until it is gone.
+func stopWine() async {
+    _ = try? run(Paths.launcher.path, ["WSS-wineserverkill"])
+    for _ in 0..<30 where wineRunning() { try? await Task.sleep(nanoseconds: 500_000_000) }
+}
+
+/// Keep the data folder's copies of files shipped in the app (sync script, mod DLL) current with
+/// this app version; sync_mods.sh then carries the DLL into the game folders.
+func refreshBundledFiles() {
+    guard FileManager.default.fileExists(atPath: Paths.data.path) else { return }
+    try? FileManager.default.createDirectory(at: Paths.mods, withIntermediateDirectories: true)
+    for (name, dir) in [("sync_mods.sh", Paths.data), ("VERSION.dll", Paths.mods)] {
+        let src = Paths.resources.appendingPathComponent(name)
+        let dst = dir.appendingPathComponent(name)
+        guard let new = try? Data(contentsOf: src), (try? Data(contentsOf: dst)) != new else { continue }
+        try? new.write(to: dst, options: .atomic)
+        appendLog("updated \(name) from the app")
+        if name == "sync_mods.sh" {
+            // an older copy may still be running and holding the lock; replace it
+            _ = try? run("/usr/bin/pkill", ["-f", "Warcraft1Mac/sync_mods.sh"])
+            try? FileManager.default.removeItem(at: Paths.data.appendingPathComponent(".sync.pid"))
+            if wineRunning() {
+                _ = try? run("/bin/sh", ["-c", "nohup /bin/sh \"$HOME/Library/Application Support/Warcraft1Mac/sync_mods.sh\" >/dev/null 2>&1 &"])
+            }
+        }
+    }
 }
 
 func wineRunning() -> Bool {
@@ -380,6 +411,8 @@ final class Model: ObservableObject {
     @Published var ghostFix = true { didSet { saveSettings() } }
     @Published var middlePan = true { didSet { saveSettings() } }
     @Published var astar = true { didSet { saveSettings() } }
+    @Published var middlePan2 = true { didSet { saveSettings() } }
+    @Published var astar2 = true { didSet { saveSettings() } }
     @Published var status = ""
     @Published var busy = false
     @Published var step = 0
@@ -392,7 +425,8 @@ final class Model: ObservableObject {
     init() {
         loadSettings()
         loading = false
-        refreshSyncScript()
+        refreshBundledFiles()
+        if installed && !FileManager.default.fileExists(atPath: Paths.ini2.path) { saveSettings() }
         if installed && !wineRunning() { prepareEnvironment() }
         status = installed ? "Ready. Click Play to open Battle.net." :
             "Click Install. Setup downloads about 300 MB and takes a few minutes."
@@ -458,14 +492,22 @@ final class Model: ObservableObject {
     }
 
     func loadSettings() {
-        guard let text = try? String(contentsOf: Paths.ini, encoding: .utf8) else { return }
-        func value(_ k: String) -> String? {
-            text.components(separatedBy: .newlines).first { $0.hasPrefix("\(k)=") }
-                .map { String($0.dropFirst(k.count + 1)).trimmingCharacters(in: .whitespaces) }
+        func reader(_ url: URL) -> ((String) -> String?)? {
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+            return { k in
+                text.components(separatedBy: .newlines).first { $0.hasPrefix("\(k)=") }
+                    .map { String($0.dropFirst(k.count + 1)).trimmingCharacters(in: .whitespaces) }
+            }
         }
-        ghostFix = value("ghost_fix") != "0"
-        middlePan = value("middle_mouse_pan") != "0"
-        astar = (value("pathfinding") ?? "astar").hasPrefix("a")
+        if let value = reader(Paths.ini) {
+            ghostFix = value("ghost_fix") != "0"
+            middlePan = value("middle_mouse_pan") != "0"
+            astar = (value("pathfinding") ?? "astar").hasPrefix("a")
+        }
+        if let value = reader(Paths.ini2) {
+            middlePan2 = value("middle_mouse_pan") != "0"
+            astar2 = (value("pathfinding") ?? "astar").hasPrefix("a")
+        }
     }
 
     func saveSettings() {
@@ -480,8 +522,18 @@ final class Model: ObservableObject {
             patch_delay_ms=8000
 
             """
+        let ini2 = """
+            [mods]
+            enabled=1
+            middle_mouse_pan=\(middlePan2 ? 1 : 0)
+            pan_speed_percent=100
+            pathfinding=\(astar2 ? "astar" : "original")
+            patch_delay_ms=8000
+
+            """
         try? FileManager.default.createDirectory(at: Paths.mods, withIntermediateDirectories: true)
         try? ini.replacingOccurrences(of: "\n", with: "\r\n").write(to: Paths.ini, atomically: true, encoding: .utf8)
+        try? ini2.replacingOccurrences(of: "\n", with: "\r\n").write(to: Paths.ini2, atomically: true, encoding: .utf8)
     }
 
     func install() {
@@ -606,7 +658,25 @@ final class Model: ObservableObject {
 
     func play() {
         saveSettings()
+        // Battle.net's background Agent keeps Wine running after Battle.net closes, which would
+        // block pending settings updates forever; stop it first (we are about to start it anyway).
+        if wineRunning(), !gameRunning(), (try? applyRegistry(dryRun: true)) == true {
+            busy = true
+            status = "Applying updated settings…"
+            Task {
+                await stopWine()
+                prepareEnvironment()
+                busy = false
+                launch()
+            }
+            return
+        }
         if !wineRunning() { prepareEnvironment() }
+        launch()
+    }
+
+    private func launch() {
+        startSync()
         if FileManager.default.fileExists(atPath: Paths.battleNet.path) {
             NSWorkspace.shared.openApplication(at: Paths.wrapper, configuration: .init())
             status = "Battle.net is opening. Mods switch on a few seconds after the game starts."
@@ -651,11 +721,19 @@ struct ContentView: View {
                     Toggle("Fix the crash after loading some saves", isOn: $m.ghostFix)
                     Toggle("Hold the middle mouse button and drag to pan the map", isOn: $m.middlePan)
                     Toggle("Smarter pathfinding (A*) instead of the original", isOn: $m.astar)
-                    Text("Changes apply the next time the game starts.").font(.caption).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(4)
             }
+            GroupBox("Warcraft II mods") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Hold the middle mouse button and drag to pan the map", isOn: $m.middlePan2)
+                    Toggle("Smarter pathfinding (A*) instead of the original", isOn: $m.astar2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(4)
+            }
+            Text("Changes apply the next time a game starts.").font(.caption).foregroundStyle(.secondary)
             if m.busy {
                 ProgressView(value: Double(m.step), total: Double(m.totalSteps))
             }

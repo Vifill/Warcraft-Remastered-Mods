@@ -24,7 +24,8 @@ Mac" app), and mod Warcraft I (Mac and Windows). Private repo `Vifill/Warcraft-R
   `sh tools/package.sh`. Builds are reproducible (`/brepro`, deterministic zip).
 - Windows: the code is plain C/asm for clang + lld-link (i386-pc-windows-msvc, no CRT, no SDK);
   `build.sh` needs a POSIX shell (Git Bash) and LLVM for Windows (`clang`, `lld-link`) + python.
-  The Mac app part only builds on a Mac.
+  The Mac app part only builds on a Mac. In Git Bash set `MSYS2_ARG_CONV_EXCL='*'` (else lld-link
+  `/flags` are turned into paths) and put `C:\Program Files\LLVM\bin` on PATH.
 
 ## Conventions
 - Game addresses are VAs at base 0x400000; always go through `REL()` (ASLR on Windows).
@@ -44,11 +45,13 @@ Open:
 2. Test the GitHub-built `VERSION.dll` in game (log should show all three mods `installed`).
 3. Warcraft II: supported by the Mac app (WineMetalGL overrides for `Warcraft II.exe` and the Map
    Editor, file sync, saves in `Warcraft1Mac Saves/Warcraft II`). Verified launching it remotely via
-   Battle.net `--exec="launch W2R"` (wrapper "Program Flags"): intro cinematic renders. Sound and
-   actual play not yet checked on the Mac. WC2 saves: `Saved Games\Warcraft2Remastered`,
-   GlobalSave keys todOrc/todHuman (14) and bdpOrc/bdpHuman (12).
-4. Possibly mod Warcraft II the same way: it is 32-bit, imports VERSION.dll and ClientSdk.dll,
-   has ASLR. Addresses must be found again (tile grid, camera, pathfinder). On Windows, x64dbg /
+   Battle.net `--exec="launch W2R"` (wrapper "Program Flags"): intro cinematic renders. WC2 saves:
+   `Saved Games\Warcraft2Remastered`, GlobalSave keys todOrc/todHuman (14), bdpOrc/bdpHuman (12).
+4. Warcraft II mods: middle_mouse_pan and A* pathfinding done and tested (Windows), see the W2
+   part of NOTES.md. The Mac app loads them too (version=native,builtin for `Warcraft II.exe`,
+   VERSION.dll + w2r_mods.ini synced into the W2 folder).
+   Next: AI/control complaints (idle units not attacking, attack-move). It is 32-bit, imports
+   VERSION.dll and ClientSdk.dll, has ASLR; W1 addresses do not apply. On Windows, x64dbg /
    Cheat Engine make finding them easy.
 5. Release: bump `VERSION`, update `RELEASE_NOTES.md`, `git tag v1.0.0 && git push --tags`.
    Repo is private; making it public enables attestations.

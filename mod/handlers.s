@@ -17,11 +17,9 @@ _ghost_handler:
     cmp byte ptr [ecx + eax], 0
     jmp dword ptr [_g_ghost_ret]
 
-# middle_mouse_pan: replaces "movsx ecx,si; add [cam_x],ecx" at 0x4F2474 in the scroll routine.
-# esi/edi hold this tick's camera delta; while the middle button is held add the mouse movement.
-    .globl _pan_handler
-_pan_handler:
-    pushad                                   # [esp+0]=edi [esp+4]=esi
+# middle_mouse_pan, shared part: returns this tick's pan delta in ecx (x) / edx (y), zero while
+# the middle button is up. Clobbers eax.
+pan_delta:
     push 4                                   # VK_MBUTTON
     call dword ptr [_g_GetAsyncKeyState]
     test ax, 0x8000
@@ -30,29 +28,66 @@ _pan_handler:
     movsx eax, word ptr [ecx]
     mov ecx, dword ptr [_g_mouse_y]
     movsx edx, word ptr [ecx]
+    xor ecx, ecx
     cmp byte ptr [_g_pan_held], 0
     je 2f
-    mov ecx, dword ptr [_g_pan_last_x]
-    sub ecx, eax
-    imul ecx, dword ptr [_g_pan_scale]
-    sar ecx, 8
-    add word ptr [esp + 4], cx
-    mov ecx, dword ptr [_g_pan_last_y]
-    sub ecx, edx
-    imul ecx, dword ptr [_g_pan_scale]
-    sar ecx, 8
-    add word ptr [esp], cx
+    push esi
+    mov esi, dword ptr [_g_pan_last_x]
+    sub esi, eax
+    imul esi, dword ptr [_g_pan_scale]
+    sar esi, 8
+    mov ecx, esi
+    mov esi, dword ptr [_g_pan_last_y]
+    sub esi, edx
+    imul esi, dword ptr [_g_pan_scale]
+    sar esi, 8
+    mov dword ptr [_g_pan_last_y], edx
+    mov edx, esi
+    pop esi
+    mov dword ptr [_g_pan_last_x], eax
+    ret
 2:  mov dword ptr [_g_pan_last_x], eax
     mov dword ptr [_g_pan_last_y], edx
     mov byte ptr [_g_pan_held], 1
-    jmp 4f
+    xor edx, edx
+    ret
 3:  mov byte ptr [_g_pan_held], 0
-4:  popad
+    xor ecx, ecx
+    xor edx, edx
+    ret
+
+# middle_mouse_pan (W1): replaces "movsx ecx,si; add [cam_x],ecx" at 0x4F2474 in the scroll
+# routine. esi/edi hold this tick's camera delta; while the middle button is held add the mouse
+# movement.
+    .globl _pan_handler
+_pan_handler:
+    pushad                                   # [esp+0]=edi [esp+4]=esi
+    call pan_delta
+    add word ptr [esp + 4], cx
+    add word ptr [esp], dx
+    popad
     movsx ecx, si                            # replayed original instructions
     push eax
     mov eax, dword ptr [_g_cam_x]
     add dword ptr [eax], ecx
     pop eax
+    jmp dword ptr [_g_pan_ret]
+
+# middle_mouse_pan (W2): replaces "cwde; add [cam_x],eax; movsx eax,cx" at 0x4DF656 in the
+# scroll routine. ax/cx hold this tick's camera delta.
+    .globl _pan2_handler
+_pan2_handler:
+    pushad                                   # [esp+24]=ecx [esp+28]=eax
+    call pan_delta
+    add word ptr [esp + 28], cx
+    add word ptr [esp + 24], dx
+    popad
+    cwde                                     # replayed original instructions
+    push ecx
+    mov ecx, dword ptr [_g_cam_x]
+    add dword ptr [ecx], eax
+    pop ecx
+    movsx eax, cx
     jmp dword ptr [_g_pan_ret]
 
 # pathfinding_astar: replaces "lea eax,[ebp+8]; push 0FFFFh" at 0x508972 in findPath, after
