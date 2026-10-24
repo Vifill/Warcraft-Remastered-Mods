@@ -25,7 +25,7 @@ Fan project: run Warcraft I: Remastered on Apple Silicon Macs via Wine, and mod 
 - Windows: the code is plain C/asm for clang + lld-link (i386-pc-windows-msvc, no CRT, no SDK);
   `build.sh` needs a POSIX shell (Git Bash) and LLVM for Windows (`clang`, `lld-link`) + python.
   The Mac app part only builds on a Mac. In Git Bash set `MSYS2_ARG_CONV_EXCL='*'` (else lld-link
-  `/flags` are turned into paths) and put `C:Program Fileslvmbin` on path.
+  `/flags` are turned into paths) and put `C:\Program Files\LLVM\bin` on PATH.
 
 ## Conventions
 - Game addresses are VAs at base 0x400000; always go through `REL()` (ASLR on Windows).
