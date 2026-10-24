@@ -32,13 +32,15 @@ jobs:
             dist/Warcraft-for-Mac.zip
             dist/W1R-Mods-Installer.exe
             dist/VERSION.dll
+            dist/w1r_mods.ini
+            dist/w2r_mods.ini
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "Warcraft I: Remastered mods $GITHUB_REF_NAME" \
+            --title "Warcraft I & II: Remastered mods $GITHUB_REF_NAME" \
             --notes-file RELEASE_NOTES.md
       - uses: actions/upload-artifact@v4
         with:

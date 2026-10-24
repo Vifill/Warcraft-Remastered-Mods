@@ -1,7 +1,7 @@
 # Warcraft I & II: Remastered — Mac support and mods
 
 Fan project: run Warcraft I & II: Remastered on Apple Silicon Macs via Wine ("Warcraft I & II for
-Mac" app), and mod Warcraft I (Mac and Windows). Private repo `Vifill/Warcraft-Remastered-Mods`. See `README.md` for users and
+Mac" app), and mod both games (Mac and Windows). Private repo `Vifill/Warcraft-Remastered-Mods`. See `README.md` for users and
 **`docs/NOTES.md` for every game address, data structure and finding** — read it before modding.
 
 ## Layout
@@ -9,7 +9,9 @@ Mac" app), and mod Warcraft I (Mac and Windows). Private repo `Vifill/Warcraft-R
   exports, then ~8 s after launch patches the running game in memory (never on disk: the game
   checks its own exe). Each patch site is verified byte for byte; mismatch = that mod is skipped.
   Settings `w1r_mods.ini`, log `w1r_mods.log`, both next to `Warcraft.exe`.
-- `windows/installer.c` — Win32 installer exe (embeds the DLL, checkboxes, finds the game).
+- `windows/installer.c` — Win32 installer exe for both games (embeds the DLL, game choice,
+  checkboxes, finds the game). `mod/w1r_mods.ini` / `w2r_mods.ini`: sample settings shipped in
+  releases for installing by hand.
 - `mac/W1RMac.swift` — SwiftUI app: downloads Sikarugir Wine engine + wrapper + WineMetalGL
   (pinned SHA-256), builds the bottle, sets registry overrides, runs the Battle.net installer,
   keeps saves outside the bottle (`~/Library/Application Support/Warcraft1Mac Saves`, linked in),
